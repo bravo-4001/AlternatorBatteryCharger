@@ -85,15 +85,18 @@ CLOSED_LOOP_VARS closedloopmodelcurrloop = {
        .ki_5_times_faster = 300.0f,
        .kp_5_times_faster = 0.005f,
        .sampletime = 0.00003f,      // The sampling time is to be kept at 30microseconds
-       .uppersat = 6.0f,
-       .lowersat = 0.5f,
+//       .uppersat = 6.0f,
+//       .lowersat = 0.5f,
+       .uppersat = 1.0f,
+       .lowersat = 0.0f,
+       .output = 0.0f,
 };
 
 CLOSED_LOOP_VARS closedloopmodelvoltloop = {
        .currerr = 0.0f,
        .preverr = 0.0f,
        .integralsum = 0.0f,
-       .ref = 125.0f,    // We are setting the reference voltage to be 12.0
+       .ref = 122.0f,    // We are setting the reference voltage to be 125
        .ki = 30.0f,
        .kp = 0.01f,
        .ki_100_times_slower = 0.2f,
@@ -101,8 +104,11 @@ CLOSED_LOOP_VARS closedloopmodelvoltloop = {
        .ki_5_times_faster = 100.0f,
        .kp_5_times_faster = 0.04f,
        .sampletime = 0.00003f,      // The sampling time is to be kept at 30microseconds
-       .lowersat = 130.0f,
-       .uppersat = 600.0f,
+//       .lowersat = 130.0f,
+//       .uppersat = 600.0f,
+       .lowersat = 0.0f,
+       .uppersat = 6.0f,
+       .output = 0.0f,
 };
 float output_voltage_margin = 5.0f;
 
@@ -166,6 +172,7 @@ volatile Uint32 trans_counter = 0;          //For counting the time for precise 
 
 statemachine currstate = volt_lim_mode;
 statemachine prevstate;
+pid_control pid_state;
 
 float avgCurrOffset = 0.0f;                    //For finding the offset of the current senser
 float duty = 0.0f;                             //For keeping the track of the duty cycle
@@ -281,10 +288,10 @@ void main(void)
        closedloopmodelvoltloop.ki_5_times_faster = closedloopmodelvoltloop.ki*5.0f;
 
        while (1){
-//           if (UartDataSend == 1){
-//               SCIAWrite(txData);
-//               UartDataSend = 0;
-//           }
+           if (UartDataSend == 1){
+               SCIAWrite(txData);
+               UartDataSend = 0;
+           }
            if ((faultype.hardwareovercurrtrip==1) && (updateFaultOnceOnly<=1)){                        //Variable for recognising the hardware tripping
                Lcd_Cmd(0x01);                                             //Clear Screen
                Lcd_out(1, 1, "Hardware Trip!");

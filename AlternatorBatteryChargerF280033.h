@@ -133,6 +133,12 @@ typedef enum{
     show_duty_cycle,
 }lcdDisplay;
 
+typedef enum{
+   x100_slower,
+   normal,
+   x5_faster,
+}pid_control;
+
 typedef struct{
     Uint16 hvovervoltage : 1;
     Uint16 hvundervoltage : 1;
@@ -191,6 +197,7 @@ typedef struct{
     float sampletime;
     float uppersat;
     float lowersat;
+    float output;
 }CLOSED_LOOP_VARS;
 
 typedef struct{
