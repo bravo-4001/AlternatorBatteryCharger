@@ -42,9 +42,14 @@ SUM_INST_VALS suminstvals = {
     .sum_inst_ntcheatsinktemp = 0.0f,
     .sum_inst_ntcindcopptemp = 0.0f,
     .sum_inst_ntcindcoretemp = 0.0f,
+    .sum_inst_ntcalttemp = 0.0f,
     .sum_currsens = 0.0f,
     .sum_dclink = 0.0f,
     .sum_outvolt = 0.0f,
+    .sum_inst_r_phase_curr = 0.0f,
+    .sum_inst_b_phase_curr = 0.0f,
+    .sum_inst_r_phase_volt = 0.0f,
+    .sum_inst_b_phase_volt = 0.0f
 };
 
 MAX_MIN_REF_VALS refValsStartState = {
@@ -110,23 +115,81 @@ CLOSED_LOOP_VARS closedloopmodelvoltloop = {
        .uppersat = 6.0f,
        .output = 0.0f,
 };
+
+CLOSED_LOOP_VARS pll_w_controller = {
+       .currerr = 0.0f,
+       .preverr = 0.0f,
+       .ref = 0.0f,
+       .ki = 2579.367f,
+       .kp = 177.688f,
+       .sampletime = 0.00003f,
+       .output = 0.0f,
+       .uppersat = 1000.0f,
+       .lowersat = 0.0f,
+};
+
+HARMONIC_OSCILLATOR harmonic_oscillator = {
+       .x_prev = 0.0f,
+       .y_prev = 1.0f,
+       .x = 0.0f,
+       .y = 1.0f,
+};
+
+PLL_LOOP_PARAMS pll_loop_params = {
+     .theta_e = 0.0f,
+     .omega = 0.0f,
+     .prev_omega = 0.0f,
+     .prev_theta_e = 0.0f,
+     .v_alpha = 0.0f,
+     .v_beta = 0.0f,
+     .v_d = 0.0f,
+     .v_q = 0.0f,
+     .freq = 0.0f,
+     .time_period = 0.0f,
+};
+
 float output_voltage_margin = 5.0f;
 
 ALT_BATT_PARAMS multipliers = {
-       .currsens = 0.059325f,
-       .dcLink = 0.002247191f,
-       .outputvolt = 0.00408163f,
-       .heatsinkvoltsens = 0.58928571f,
-       .inductorcoppvoltsens = 0.58928571f,
-       .inductorcorevoltsens = 0.58928571f,
+       .buck_out_curr = 16.9696f,
+       .dc_link = 0.002247191f,
+       .buck_out_voltage = 0.00408163f,
+       .heat_sink_temp = 0.58928571f,
+       .inductor_copp_temp = 0.58928571f,
+       .inductor_core_temp = 0.58928571f,
+       .alt_temp = 1.0f,
+       .r_phase_curr = 85.8f,
+       .b_phase_curr = 85.8f,
+       .r_line_volt = 296.96f,
+       .b_line_volt = 296.96f,
 };
 ALT_BATT_PARAMS offsets = {
-       .currsens = 1.465f,
-       .dcLink = 0.0f,
-       .outputvolt = 0.0f,
-       .heatsinkvoltsens = 0.0f,
-       .inductorcoppvoltsens = 0.0f,
-       .inductorcorevoltsens = 0.0f,
+       .buck_out_curr = 25.0f,
+       .dc_link = 0.0f,
+       .buck_out_voltage = 0.0f,
+       .heat_sink_temp = 0.0f,
+       .inductor_copp_temp = 0.0f,
+       .inductor_core_temp = 0.0f,
+       .alt_temp = 0.0f,
+       .r_phase_curr = 125.0f,
+       .b_phase_curr = 125.0f,
+       .r_line_volt = 491.4688f,
+       .b_line_volt = 491.4688f,
+};
+
+PHASE_SEQ phase_seq_cntr = {
+       .rby_phase_seq = 0,
+       .ryb_phase_seq = 0,
+};
+
+LOW_PASS_FILTER lpf_r_line = {
+       .new_val = 0.0f,
+       .prev_val = 0.0f,
+};
+
+LOW_PASS_FILTER lpf_b_line = {
+       .new_val = 0.0f,
+       .prev_val = 0.0f,
 };
 
 DELAY_CTR delayCtrs;
@@ -151,6 +214,8 @@ CORE_TEMP_INST_VALS insttempvals;
 char txData[DATA_LENGTH];                   //For storing the data to be transmitted for the UART transmission
 char rxData[DATA_LENGTH];                   //For receiving the data received through the UART communication
 char showData[DATA_LENGTH];                 //For the data to be display and numerical values converted into the strings
+//float v_magnitude_array[667] = {0};
+//float freq_array[667] = {0};
 
 //Uart sending and receiving indexes
 volatile Uint16 dataIdTxUart = 0;
@@ -166,6 +231,9 @@ volatile Uint16 updateAfter20ms_Ctr = 0;              //For making sure that the
 volatile Uint16 UartDataSend = 0;           //For making sure that UART messages are transmitted after a certain period of time
 volatile Uint32 trans_counter = 0;          //For counting the time for precise transition from
                                             //one state to the other in the state machine
+volatile Uint32 var_delay_alt_counter = 0;
+Uint16 seq_detect_counter = 0;
+Uint32 plot_counter = 0;
 
 //Currstate for keeping the track of the current state of the charger
 //Prevstate for making sure that state change leads to clear LCD screen once
@@ -194,17 +262,27 @@ float voltage_margin = 15.0f;
 float upper_thres_voltage_margin = 25.0f;
 //+++++++++++++++++++++End of the global variables+++++++++++++++++++++
 
+//TESTING
+Uint16 phase_seq_change = 0;
+float Vm = 230.0f;
+float input_freq = 30.0;
+float phase = 0.0f;
+float v_magnitude;
+phase_seq phase_detect;
+
 void main(void)
 {
     delayCtrs.fivesecdelaycnt = (Uint32)(5.0f/(closedloopmodelvoltloop.sampletime));
     delayCtrs.onesecdelaycnt = (Uint32)(1.0f/(closedloopmodelvoltloop.sampletime));
     delayCtrs.twenty_ms_delay = (Uint32)(0.02f/(closedloopmodelvoltloop.sampletime));
     delayCtrs.twosecdelaycnt = (Uint32)(2.0f/(closedloopmodelvoltloop.sampletime));
+    delayCtrs.phase_seq_max_cnt = 100;
     prevstate = currstate;
 ////--- CPU Initialization
     InitSysCtrl();                      // Initialize the CPU (FILE: f28002x_sysCtrl.c)
 
-    InitGpio();                         // Initialize the shared GPIO pins (FILE: f28002x_gpio.c)
+    InitGpio();
+    // Initialize the shared GPIO pins (FILE: f28002x_gpio.c)
 
     DINT;
 
@@ -241,7 +319,7 @@ void main(void)
        InitCmpss();
        InitEPwm();                                     // Initialize the EPwm (FILE: EPwm.c)
        InitDaca();
-//       SCIA_init();
+       SCIA_init();
        EALLOW;
 //    Enabling the CPU interrupts
        IER |= M_INT1;                                  // Enable INT1 in IER to enable PIE group 1

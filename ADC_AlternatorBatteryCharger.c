@@ -183,52 +183,57 @@ void initADC(void)
     //----- SOC (SOC0, SOC1, SOC2) Configuration for ADC A: START -----
 
     AdcaRegs.ADCSOC0CTL.bit.TRIGSEL         = 0x05;    // Trigger by ePWM1 SOC A
-    AdcaRegs.ADCSOC0CTL.bit.CHSEL           = 0x05;    // Convert channel ADC A5: ie ac current
+    AdcaRegs.ADCSOC0CTL.bit.CHSEL           = 7;       // Convert channel ADC A7: R-phase current
     AdcaRegs.ADCSOC0CTL.bit.ACQPS           = 0x09;    // Acquisition window (10 SYSCLK Cycles) i.e., 100ns
 
     AdcaRegs.ADCSOC1CTL.bit.TRIGSEL         = 0x05;    // Trigger by ePWM1 SOC A
-    AdcaRegs.ADCSOC1CTL.bit.CHSEL           = 0x07;    // Convert channel ADC A7: For sensing the temperature of the heat sink
+    AdcaRegs.ADCSOC1CTL.bit.CHSEL           = 6;       // R Phase voltage
     AdcaRegs.ADCSOC1CTL.bit.ACQPS           = 0x09;    // Acquisition window (10 SYSCLK Cycles) i.e., 100ns
 //
-//    AdcaRegs.ADCSOC2CTL.bit.TRIGSEL         = 0x05;    // Trigger by ePWM1 SOC A
-//    AdcaRegs.ADCSOC2CTL.bit.CHSEL           = 0x06;    // Convert channel ADC A6: Input line to line voltage (vry)
-//    AdcaRegs.ADCSOC2CTL.bit.ACQPS           = 0x09;    // Acquisition window (10 SYSCLK Cycles) i.e., 100ns
-//
-//    AdcaRegs.ADCSOC3CTL.bit.TRIGSEL         = 0x05;    // Trigger by ePWM1 SOC A
-//    AdcaRegs.ADCSOC3CTL.bit.CHSEL           = 0x0C;    // Convert channel ADC A12: Y phase output current (iy)
-//    AdcaRegs.ADCSOC3CTL.bit.ACQPS           = 0x09;    // Acquisition window (10 SYSCLK Cycles) i.e., 100ns
+    AdcaRegs.ADCSOC2CTL.bit.TRIGSEL         = 0x05;    // Trigger by ePWM1 SOC A
+    AdcaRegs.ADCSOC2CTL.bit.CHSEL           = 11;      // DC Link voltage
+    AdcaRegs.ADCSOC2CTL.bit.ACQPS           = 0x09;    // Acquisition window (10 SYSCLK Cycles) i.e., 100ns
+
+    AdcaRegs.ADCSOC3CTL.bit.TRIGSEL         = 0x05;    // Trigger by ePWM1 SOC A
+    AdcaRegs.ADCSOC3CTL.bit.CHSEL           = 15;      // Alternator temperature sensing
+    AdcaRegs.ADCSOC3CTL.bit.ACQPS           = 0x09;    // Acquisition window (10 SYSCLK Cycles) i.e., 100ns
+
 //----- SOC (SOC0, SOC1, SOC2) Configuration for ADC A: END -----
 
 //----- SOC (SOC0, SOC1, SOC2) Configuration for ADC B: START -----
 
     AdcbRegs.ADCSOC0CTL.bit.TRIGSEL         = 0x05;    // Trigger by ePWM1 SOC A
-    AdcbRegs.ADCSOC0CTL.bit.CHSEL           = 0x0A;    // Convert channel ADC B10: For the voltage across the convertor capacitor
+    AdcbRegs.ADCSOC0CTL.bit.CHSEL           = 7;       // B Phase current
     AdcbRegs.ADCSOC0CTL.bit.ACQPS           = 0x09;    // Acquisition window (10 SYSCLK Cycles) i.e., 100ns
 
     AdcbRegs.ADCSOC1CTL.bit.TRIGSEL         = 0x05;    // Trigger by ePWM1 SOC A
-    AdcbRegs.ADCSOC1CTL.bit.CHSEL           = 0x07;    // Convert channel ADC B7: For sensing the temperature of the inductor copper.
+    AdcbRegs.ADCSOC1CTL.bit.CHSEL           = 2;       // B Phase voltage
     AdcbRegs.ADCSOC1CTL.bit.ACQPS           = 0x09;    // Acquisition window (10 SYSCLK Cycles) i.e., 100ns
-//
-//    AdcbRegs.ADCSOC2CTL.bit.TRIGSEL         = 0x05;    // Trigger by ePWM1 SOC A
-//    AdcbRegs.ADCSOC2CTL.bit.CHSEL           = 0x0C;    // Convert channel ADC B12: Frequency Input
-//    AdcbRegs.ADCSOC2CTL.bit.ACQPS           = 0x09;    // Acquisition window (10 SYSCLK Cycles) i.e., 100ns
+
+    AdcbRegs.ADCSOC2CTL.bit.TRIGSEL         = 0x05;    // Trigger by ePWM1 SOC A
+    AdcbRegs.ADCSOC2CTL.bit.CHSEL           = 3;       // Inductor copper temperature
+    AdcbRegs.ADCSOC2CTL.bit.ACQPS           = 0x09;    // Acquisition window (10 SYSCLK Cycles) i.e., 100ns
+
+    AdcbRegs.ADCSOC3CTL.bit.TRIGSEL         = 0x05;    // Trigger by ePWM1 SOC A
+    AdcbRegs.ADCSOC3CTL.bit.CHSEL           = 6;       // Heat sink temperature
+    AdcbRegs.ADCSOC3CTL.bit.ACQPS           = 0x09;    // Acquisition window (10 SYSCLK Cycles) i.e., 100ns
 
 //----- SOC (SOC0, SOC1, SOC2) Configuration for ADC B: END -----
 
 //----- SOC (SOC0, SOC1, SOC2) Configuration for ADC C: START -----
 //
     AdccRegs.ADCSOC0CTL.bit.TRIGSEL         = 0x05;    // Trigger by ePWM1 SOC A
-    AdccRegs.ADCSOC0CTL.bit.CHSEL           = 0x04;    // Convert channel ADC C4: For the output of the buck convertor
+    AdccRegs.ADCSOC0CTL.bit.CHSEL           = 2;       // Output current of the buck convertor
     AdccRegs.ADCSOC0CTL.bit.ACQPS           = 0x0B;    // Acquisition window (10 SYSCLK Cycles) i.e., 100ns
 //
     AdccRegs.ADCSOC1CTL.bit.TRIGSEL         = 0x05;    // Trigger by ePWM1 SOC A
-    AdccRegs.ADCSOC1CTL.bit.CHSEL           = 0x01;    // Convert channel ADC C1: For sensing the temperature of the inductor core.
+    AdccRegs.ADCSOC1CTL.bit.CHSEL           = 4;       // Output voltage of the buck convertor
     AdccRegs.ADCSOC1CTL.bit.ACQPS           = 0x09;    // Acquisition window (10 SYSCLK Cycles) i.e., 100ns
 
 
-//    AdccRegs.ADCSOC2CTL.bit.TRIGSEL         = 0x05;    // Trigger by ePWM1 SOC A
-//    AdccRegs.ADCSOC2CTL.bit.CHSEL           = 0x07;    // Convert channel ADC C4: Fan Failure Voltage detection
-//    AdccRegs.ADCSOC2CTL.bit.ACQPS           = 0x09;    // Acquisition window (10 SYSCLK Cycles) i.e., 100ns
+    AdccRegs.ADCSOC2CTL.bit.TRIGSEL         = 0x05;    // Trigger by ePWM1 SOC A
+    AdccRegs.ADCSOC2CTL.bit.CHSEL           = 1;       // Inductor core temperature
+    AdccRegs.ADCSOC2CTL.bit.ACQPS           = 0x09;    // Acquisition window (10 SYSCLK Cycles) i.e., 100ns
 
 
 //----- SOC (SOC0, SOC1, SOC2) Configuration for ADC C: END -----

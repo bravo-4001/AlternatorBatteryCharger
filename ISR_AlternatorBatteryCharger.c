@@ -341,13 +341,16 @@ static inline float PIControl(CLOSED_LOOP_VARS* loop_ctrl, pid_control pid_state
 
     switch (pid_state){
         case x100_slower: {
-            loop_ctrl->output = loop_ctrl->output + loop_ctrl->kp_100_times_slower * (loop_ctrl->currerr - loop_ctrl->preverr) + (2.0f * (loop_ctrl->ki_100_times_slower/loop_ctrl->sampletime) * (loop_ctrl->currerr + loop_ctrl->preverr));
+            loop_ctrl->output = loop_ctrl->output + loop_ctrl->kp_100_times_slower * (loop_ctrl->currerr - loop_ctrl->preverr) + (((loop_ctrl->ki_100_times_slower*loop_ctrl->sampletime)/(2.0f)) * (loop_ctrl->currerr + loop_ctrl->preverr));
+            break;
         }
         case normal: {
-            loop_ctrl->output = loop_ctrl->output + loop_ctrl->kp * (loop_ctrl->currerr - loop_ctrl->preverr) + (2.0f * (loop_ctrl->ki/loop_ctrl->sampletime) * (loop_ctrl->currerr + loop_ctrl->preverr));
+            loop_ctrl->output = loop_ctrl->output + loop_ctrl->kp * (loop_ctrl->currerr - loop_ctrl->preverr) + (((loop_ctrl->ki*loop_ctrl->sampletime)/(2.0f)) * (loop_ctrl->currerr + loop_ctrl->preverr));
+            break;
         }
         case x5_faster: {
-            loop_ctrl->output = loop_ctrl->output + loop_ctrl->kp_5_times_faster * (loop_ctrl->currerr - loop_ctrl->preverr) + (2.0f * (loop_ctrl->ki_5_times_faster/loop_ctrl->sampletime) * (loop_ctrl->currerr + loop_ctrl->preverr));
+            loop_ctrl->output = loop_ctrl->output + loop_ctrl->kp_5_times_faster * (loop_ctrl->currerr - loop_ctrl->preverr) + (((loop_ctrl->ki_5_times_faster*loop_ctrl->sampletime)/(2.0f)) * (loop_ctrl->currerr + loop_ctrl->preverr));
+            break;
         }
     }
 
@@ -366,6 +369,8 @@ static inline float PIControl(CLOSED_LOOP_VARS* loop_ctrl, pid_control pid_state
 
 interrupt void ADCA1_ISR(void)
 {
+    static float r_phase = 0.0f;
+    static Uint16 phase_detected = 0;
 //    For the LCD logic
     updateAfter20ms_Ctr++;
     if (GpioDataRegs.GPADAT.bit.GPIO22 == 0){
@@ -380,36 +385,194 @@ interrupt void ADCA1_ISR(void)
         getNewState = 0;
     }
 
-//    Getting the sensed values in the voltages
-    sensedvalues.currsens = (AdcaResultRegs.ADCRESULT0)*(3.3f/4096.0f);
-    sensedvalues.dcLink = (AdcbResultRegs.ADCRESULT0)*(3.3f/4096.0f);
-    sensedvalues.outputvolt = (AdccResultRegs.ADCRESULT0)*(3.3f/4096.0f);
-    sensedvalues.heatsinkvoltsens = (AdcaResultRegs.ADCRESULT1)*(3.3f/4096.0f);
-    sensedvalues.inductorcoppvoltsens = (AdcbResultRegs.ADCRESULT1)*(3.3f/4096.0f);
-    sensedvalues.inductorcorevoltsens = (AdccResultRegs.ADCRESULT1)*(3.3f/4096.0f);
+    //Sensing using the ADCs
+    // ADC-A Channels
+    sensedvalues.r_phase_curr   = (AdcaResultRegs.ADCRESULT0) * (3.3F / 4096.0F);   // ADC-A SOC0: R phase current
+    sensedvalues.r_line_volt    = (AdcaResultRegs.ADCRESULT1) * (3.3F / 4096.0F);   // ADC-A SOC1: R phase voltage
+    sensedvalues.dc_link        = (AdcaResultRegs.ADCRESULT2) * (3.3F / 4096.0F);   // ADC-A SOC2: DC link voltage
+    sensedvalues.alt_temp       = (AdcaResultRegs.ADCRESULT3) * (3.3F / 4096.0F);   // ADC-A SOC3: Alternator temperature
+
+    // ADC-B Channels
+    sensedvalues.b_phase_curr         = (AdcbResultRegs.ADCRESULT0) * (3.3F / 4096.0F);  // ADC-B SOC0: B phase current
+    sensedvalues.b_line_volt          = (AdcbResultRegs.ADCRESULT1) * (3.3F / 4096.0F);  // ADC-B SOC1: B phase voltage
+    sensedvalues.inductor_copp_temp   = (AdcbResultRegs.ADCRESULT2) * (3.3F / 4096.0F);  // ADC-B SOC2: Inductor copper temperature
+    sensedvalues.heat_sink_temp       = (AdcbResultRegs.ADCRESULT3) * (3.3F / 4096.0F);  // ADC-B SOC3: Heat sink temperature
+
+    // ADC-C Channels
+    sensedvalues.buck_out_curr        = (AdccResultRegs.ADCRESULT0) * (3.3F / 4096.0F);  // ADC-C SOC0: Buck output current
+    sensedvalues.buck_out_voltage     = (AdccResultRegs.ADCRESULT1) * (3.3F / 4096.0F);  // ADC-C SOC1: Buck output voltage
+    sensedvalues.inductor_core_temp   = (AdccResultRegs.ADCRESULT2) * (3.3F / 4096.0F);  // ADC-C SOC2: Inductor core temperature
+
 
 //    Taking the effect of the offsets and multipliers
-    actualvalues.currsens = (sensedvalues.currsens-offsets.currsens)/(multipliers.currsens);
-    actualvalues.dcLink = (sensedvalues.dcLink-offsets.dcLink)/(multipliers.dcLink);
-    actualvalues.outputvolt = (sensedvalues.outputvolt-offsets.outputvolt)/(multipliers.outputvolt);
+    actualvalues.buck_out_curr = (sensedvalues.buck_out_curr*multipliers.buck_out_curr)-(offsets.buck_out_curr);
+    actualvalues.dc_link = (sensedvalues.dc_link-offsets.dc_link)/(multipliers.dc_link);
+    actualvalues.buck_out_voltage = (sensedvalues.buck_out_voltage-offsets.buck_out_voltage)/(multipliers.buck_out_voltage);
+    actualvalues.r_phase_curr = (multipliers.r_phase_curr * sensedvalues.r_phase_curr) - offsets.r_phase_curr;
+    actualvalues.b_phase_curr = (multipliers.b_phase_curr * sensedvalues.b_phase_curr) - offsets.b_phase_curr;
+
+    //  Getting the actual line voltages from the sensed values of the voltages
+    actualvalues.r_line_volt = (multipliers.r_line_volt * sensedvalues.r_line_volt) - offsets.r_line_volt;
+    actualvalues.b_line_volt = (multipliers.b_line_volt * sensedvalues.b_line_volt) - offsets.b_line_volt;
+
+//    Test bench for the customized sine waves with given amplitude and the frequency
+    phase = phase + closedloopmodelvoltloop.sampletime*(2.0f)*M_PI*input_freq;
+    if (phase >= (2*M_PI)){
+        phase -= (2*M_PI);
+    }
+
+    if (phase_seq_change == 0){
+        actualvalues.r_line_volt = (-1.0f) * sqrtf(3) * Vm * cosf(phase - M_PI/(3.0f));
+        actualvalues.b_line_volt = (-1.0f) * sqrtf(3) * Vm * cosf(phase - M_PI);
+    }else{
+        actualvalues.r_line_volt = sqrtf(3) * Vm * cosf(phase + M_PI/(3.0f));
+        actualvalues.b_line_volt = sqrtf(3) * Vm * cosf(phase - M_PI);
+    }
+
+    //  For the phase sequence detection
+    float r_phase_prev = r_phase;
+    float y_phase = (-1)*(actualvalues.b_line_volt + actualvalues.r_line_volt)/(3.0f);
+    r_phase = ((2.0f)*actualvalues.r_line_volt - actualvalues.b_line_volt)/(3.0f);
+    float b_phase = ((2.0f)*actualvalues.b_line_volt - actualvalues.r_line_volt)/(3.0f);
+
+    //Applying the low filter to filter high frequency components above 100 Hz
+//    lpf_r_line.prev_val = lpf_r_line.new_val;
+//    lpf_b_line.prev_val = lpf_b_line.new_val;
+//    lpf_r_line.new_val = (1.9811f/2.01885f)*lpf_r_line.prev_val + (0.01885/2.01885f)*actualvalues.r_line_volt + (0.01885/2.01885f)*actualvalues.r_line_volt;
+//    lpf_b_line.new_val = (1.9811f/2.01885f)*lpf_b_line.prev_val + (0.01885/2.01885f)*actualvalues.b_line_volt + (0.01885/2.01885f)*actualvalues.b_line_volt;
+
+//    Code for detecting the phase sequence of the given three phases
+    if ((r_phase_prev <= 0.0f) && (r_phase >= 0.0f)){
+        if (b_phase > 0.0f && y_phase < 0.0f){
+            phase_seq_cntr.ryb_phase_seq++;
+        }else{
+            phase_seq_cntr.rby_phase_seq++;
+        }
+        seq_detect_counter++;
+    }
+    if ((r_phase_prev >= 0.0f) && (r_phase <= 0.0f)){
+        if (b_phase > 0.0f && y_phase < 0.0f){
+            phase_seq_cntr.rby_phase_seq++;
+        }else{
+            phase_seq_cntr.ryb_phase_seq++;
+        }
+        seq_detect_counter++;
+    }
+//    Getting the phase sequence
+    if (seq_detect_counter >= delayCtrs.phase_seq_max_cnt){
+        if (phase_seq_cntr.rby_phase_seq > phase_seq_cntr.ryb_phase_seq){
+            phase_detect = rby_phase_seq;
+        }else{
+            phase_detect = ryb_phase_seq;
+        }
+        seq_detect_counter = 0;
+        phase_detected = 1;
+    }
 
 //    For getting the resistances values
-    ntcresvals.ntcheatsinkres = (9435.668f/(sensedvalues.heatsinkvoltsens)) - 8201.4388f;
-    ntcresvals.ntcindcoppres = (9435.668f/(sensedvalues.inductorcoppvoltsens)) - 8201.4388f;
-    ntcresvals.ntcindcoreres = (9435.668f/(sensedvalues.inductorcorevoltsens)) - 8201.4388f;
+    ntcresvals.ntcheatsinkres = (9435.668f/(sensedvalues.heat_sink_temp)) - 8201.4388f;
+    ntcresvals.ntcindcoppres = (9435.668f/(sensedvalues.inductor_copp_temp)) - 8201.4388f;
+    ntcresvals.ntcindcoreres = (9435.668f/(sensedvalues.inductor_core_temp)) - 8201.4388f;
+    ntcresvals.ntcalttemp = (9435.668f/(sensedvalues.alt_temp)) - 8201.4388f;
 
 //    For finding the temperature at every sample of the resistance found or calculated
     insttempvals.inst_ntcheatsinktemp = (1.0f/((1/298.0f) + ((1/beta) * logf((ntcresvals.ntcheatsinkres)/10000.0)))) - 273.0f; // in degree celsius
     insttempvals.inst_ntcindcopptemp = (1.0f/((1/298.0f) + ((1/beta) * logf((ntcresvals.ntcindcoppres)/10000.0)))) - 273.0f; // in degree celsius
     insttempvals.inst_ntcindcoretemp = (1.0f/((1/298.0f) + ((1/beta) * logf((ntcresvals.ntcindcoreres)/10000.0)))) - 273.0f; // in degree celsius
+    insttempvals.inst_ntcalttemp = (1.0f/((1/298.0f) + ((1/beta) * logf((ntcresvals.ntcalttemp)/10000.0)))) - 273.0f; // in degree celsius
 
+    // Code for finding the frequencies of the current supplied by the alternator using the phase locked loop
+    if (phase_detected == 1){
+        if (phase_detect == rby_phase_seq){
+                pll_loop_params.v_alpha = (-1.0f) * (1/sqrtf(3)) * actualvalues.b_line_volt;
+        }else{
+            pll_loop_params.v_alpha = (1/sqrtf(3)) * actualvalues.b_line_volt;
+        }
+        pll_loop_params.v_beta  = (2.0f*actualvalues.r_line_volt - actualvalues.b_line_volt)/3.0f;
+
+
+    //  If filtered output is desired to find the corresponding values
+    //    if (phase_detect == rby_phase_seq){
+    //        pll_loop_params.v_alpha = (-1.0f) * (1/sqrtf(3)) * lpf_b_line.new_val;
+    //    }else{
+    //        pll_loop_params.v_alpha = (1/sqrtf(3)) * lpf_b_line.new_val;
+    //    }
+    //    pll_loop_params.v_beta  = (2.0f*lpf_r_line.new_val - lpf_b_line.new_val)/3.0f;
+
+        // Normalising the v_alpha and v_beta
+        v_magnitude = sqrtf(pll_loop_params.v_alpha*pll_loop_params.v_alpha + pll_loop_params.v_beta*pll_loop_params.v_beta);
+        pll_loop_params.v_beta = pll_loop_params.v_beta / v_magnitude;
+        pll_loop_params.v_alpha = pll_loop_params.v_alpha / v_magnitude;
+
+        // Code for the calculation of the clarke transform from the Valpha and Vbeta parameters of the park transform
+        pll_loop_params.v_q     = pll_loop_params.v_beta * harmonic_oscillator.y - pll_loop_params.v_alpha * harmonic_oscillator.x;
+        pll_loop_params.v_d     = pll_loop_params.v_beta * harmonic_oscillator.x + pll_loop_params.v_alpha * harmonic_oscillator.y;
+
+    //    Using the pid controller to find the value of the omega
+        pll_w_controller.currerr = 0.0f - pll_loop_params.v_d;
+        pll_loop_params.prev_omega = pll_w_controller.output;
+        PIControl(&pll_w_controller, normal);
+        pll_loop_params.omega = pll_w_controller.output;
+
+        //pll_w_controller.output contains the current value of the angular velocity with which the d-q plane is rotating
+        harmonic_oscillator.x_prev = harmonic_oscillator.x;
+        harmonic_oscillator.y_prev = harmonic_oscillator.y;
+        harmonic_oscillator.x = harmonic_oscillator.x_prev + (pll_w_controller.sampletime/(2.0f)) * (pll_loop_params.omega) * (harmonic_oscillator.y_prev + harmonic_oscillator.y);
+        harmonic_oscillator.y = harmonic_oscillator.y_prev - (pll_w_controller.sampletime/(2.0f)) * (pll_loop_params.omega) * (harmonic_oscillator.x_prev + harmonic_oscillator.x);
+
+        //Normalising the harmonics oscillator output
+        float magnitude = sqrtf(harmonic_oscillator.x*harmonic_oscillator.x + harmonic_oscillator.y*harmonic_oscillator.y);
+        harmonic_oscillator.x = harmonic_oscillator.x/magnitude;
+        harmonic_oscillator.y = harmonic_oscillator.y/magnitude;
+
+    }
+
+    //THE RESULT OF THIS IS PLL_W_CONTROLLER.OMEGA IS THE FINAL FREQUENCY
     suminstvals.sum_inst_ntcheatsinktemp += insttempvals.inst_ntcheatsinktemp;
     suminstvals.sum_inst_ntcindcopptemp += insttempvals.inst_ntcindcopptemp;
     suminstvals.sum_inst_ntcindcoretemp += insttempvals.inst_ntcindcoretemp;
-    suminstvals.sum_currsens += actualvalues.currsens;
-    suminstvals.sum_dclink += actualvalues.dcLink;
-    suminstvals.sum_outvolt += actualvalues.outputvolt;
+    suminstvals.sum_inst_ntcalttemp += insttempvals.inst_ntcalttemp;
+    suminstvals.sum_currsens += actualvalues.buck_out_curr;
+    suminstvals.sum_dclink += actualvalues.dc_link;
+    suminstvals.sum_outvolt += actualvalues.buck_out_voltage;
+    suminstvals.sum_inst_r_phase_curr += (actualvalues.r_phase_curr*actualvalues.r_phase_curr);
+    suminstvals.sum_inst_b_phase_curr += (actualvalues.b_phase_curr*actualvalues.b_phase_curr);
+    suminstvals.sum_inst_r_phase_volt += (actualvalues.r_line_volt*actualvalues.r_line_volt);
+    suminstvals.sum_inst_b_phase_volt += (actualvalues.b_line_volt*actualvalues.b_line_volt);
 
+    //Updating the rms values samples values based on the the detected frequency
+    pll_loop_params.freq = pll_loop_params.omega / (2*M_PI);
+    pll_loop_params.time_period = 1 / pll_loop_params.freq;
+
+//    Getting the plot of the samples vs the frequency and the magnitude of the voltage
+//    if (plot_counter >= 667){
+//        plot_counter = 0;
+//    }
+//    v_magnitude_array[plot_counter] = v_magnitude;
+//    freq_array[plot_counter++] =  pll_loop_params.freq;
+
+    //Updating the delay max count of the rms values counter accordingly
+    delayCtrs.alt_var_time_delay = (Uint32) (pll_loop_params.time_period / (closedloopmodelvoltloop.sampletime));
+
+    //How to find the rms values using the frequency obtained from the three phase PLL
+    var_delay_alt_counter++;
+    if (var_delay_alt_counter > delayCtrs.alt_var_time_delay){
+        avgvalues.rms_b_phase_volt = sqrtf(suminstvals.sum_inst_b_phase_volt/(delayCtrs.alt_var_time_delay));
+        suminstvals.sum_inst_b_phase_volt = 0.0f;
+
+        avgvalues.rms_r_phase_volt = sqrtf(suminstvals.sum_inst_r_phase_volt/(delayCtrs.alt_var_time_delay));
+        suminstvals.sum_inst_r_phase_volt = 0.0f;
+
+        avgvalues.rms_b_phase_curr = sqrtf(suminstvals.sum_inst_b_phase_curr/(delayCtrs.alt_var_time_delay));
+        suminstvals.sum_inst_b_phase_curr = 0.0f;
+
+        avgvalues.rms_r_phase_curr = sqrtf(suminstvals.sum_inst_r_phase_curr/(delayCtrs.alt_var_time_delay));
+        suminstvals.sum_inst_r_phase_curr = 0.0f;
+
+        var_delay_alt_counter = 0;
+    }
+
+    //For getting the average values of the params
     avg_vals_counter++;
     if (avg_vals_counter >= delayCtrs.twenty_ms_delay){
         avgvalues.avgheatsinktemp = suminstvals.sum_inst_ntcheatsinktemp/(delayCtrs.twenty_ms_delay);
@@ -419,6 +582,9 @@ interrupt void ADCA1_ISR(void)
         suminstvals.sum_inst_ntcindcopptemp = 0.0f;
 
         avgvalues.avgindcoretemp = suminstvals.sum_inst_ntcindcoretemp/(delayCtrs.twenty_ms_delay);
+        suminstvals.sum_inst_ntcindcoretemp = 0.0f;
+
+        avgvalues.avgalttemp = suminstvals.sum_inst_ntcalttemp/(delayCtrs.twenty_ms_delay);
         suminstvals.sum_inst_ntcindcoretemp = 0.0f;
 
         avgvalues.avgcurrsens = suminstvals.sum_currsens/(delayCtrs.twenty_ms_delay);
@@ -483,11 +649,11 @@ interrupt void ADCA1_ISR(void)
             }
             trans_counter++;
             if (trans_counter < delayCtrs.twosecdelaycnt){
-                avgCurrOffset = avgCurrOffset*(((float)trans_counter-1)/(float)trans_counter) + sensedvalues.currsens*(1.0f/((float)trans_counter));  // Doing the online average to save the space for storing the large values.
+                avgCurrOffset = avgCurrOffset*(((float)trans_counter-1)/(float)trans_counter) + sensedvalues.buck_out_curr*(1.0f/((float)trans_counter));  // Doing the online average to save the space for storing the large values.
             }
             if (trans_counter >= delayCtrs.twosecdelaycnt){
                 trans_counter=0;
-                offsets.currsens = avgCurrOffset;
+                offsets.buck_out_curr = avgCurrOffset;
                 currstate = activelogic;
             }
             break;  // End of the active state logic.
@@ -521,20 +687,21 @@ interrupt void ADCA1_ISR(void)
 
         //    EPwm given to the buck convertor for the closed loop control.
 
+            //closedloopmodelvoltloop.ref = 40.0f;
 //#####################Code for the closed loop control of the outer loop start########################
-            closedloopmodelvoltloop.currerr = closedloopmodelvoltloop.ref - actualvalues.outputvolt;
+            closedloopmodelvoltloop.currerr = closedloopmodelvoltloop.ref - actualvalues.buck_out_voltage;
 
 //            Further control logic for the further dynamic kp and ki control
-            if (actualvalues.outputvolt >= closedloopmodelvoltloop.ref){
+            if (actualvalues.buck_out_voltage >= closedloopmodelvoltloop.ref){
                 hit_ref_buck_volt_first_time = 1;
             }
 
-            if ((hit_max_buck_theshold  == 1) && (actualvalues.outputvolt < closedloopmodelvoltloop.ref)){
+            if ((hit_max_buck_theshold  == 1) && (actualvalues.buck_out_voltage < closedloopmodelvoltloop.ref)){
                 hit_max_buck_theshold = 0;
             }
 
 //          For the third condition
-            if ((hit_ref_buck_volt_first_time == 1) && (actualvalues.outputvolt >= (closedloopmodelvoltloop.ref + upper_thres_voltage_margin))){
+            if ((hit_ref_buck_volt_first_time == 1) && (actualvalues.buck_out_voltage >= (closedloopmodelvoltloop.ref + upper_thres_voltage_margin))){
                 hit_max_buck_theshold = 1;
             }
 
@@ -547,17 +714,17 @@ interrupt void ADCA1_ISR(void)
 //          There are three cases of dc link voltages on the basis of which the saturation limits will be decided
 
             //Case 1: DC Link Voltage <150
-            if (actualvalues.dcLink < 150.0f){
+            if (actualvalues.dc_link < 150.0f){
                 closedloopmodelvoltloop.uppersat = 0.5f;
             }
 
             //Case 2: DC Link Voltage >150, <600
-            if (actualvalues.dcLink >= 150.0f && actualvalues.dcLink <= 600.0f){
-                closedloopmodelvoltloop.uppersat = 0.012222f * actualvalues.dcLink - 1.33333f;
+            if (actualvalues.dc_link >= 150.0f && actualvalues.dc_link <= 600.0f){
+                closedloopmodelvoltloop.uppersat = 0.012222f * actualvalues.dc_link - 1.33333f;
             }
 
             //Case 3: DC Link Voltage >600
-            if (actualvalues.dcLink > 600.0f){
+            if (actualvalues.dc_link > 600.0f){
                 closedloopmodelvoltloop.uppersat = 6.0f;
             }
 //          Making the PID controller work
@@ -565,15 +732,16 @@ interrupt void ADCA1_ISR(void)
             if ((hit_ref_buck_volt_first_time == 0) && (hit_max_buck_theshold == 0)){
                 closedloopmodelcurrloop.ref = PIControl(&closedloopmodelvoltloop, x100_slower);
             }
-            else if ((hit_ref_buck_volt_first_time == 1) && (actualvalues.outputvolt > (closedloopmodelvoltloop.ref - voltage_margin)) && (actualvalues.outputvolt < (closedloopmodelvoltloop.ref + voltage_margin)) && (hit_max_buck_theshold == 0)){
+            else if ((hit_ref_buck_volt_first_time == 1) && (actualvalues.buck_out_voltage > (closedloopmodelvoltloop.ref - voltage_margin)) && (actualvalues.buck_out_voltage < (closedloopmodelvoltloop.ref + voltage_margin)) && (hit_max_buck_theshold == 0)){
                 closedloopmodelcurrloop.ref = PIControl(&closedloopmodelvoltloop, normal);
             }
-            else if ((hit_ref_buck_volt_first_time == 1) && ((actualvalues.outputvolt < (closedloopmodelvoltloop.ref - voltage_margin)) || (actualvalues.outputvolt > (closedloopmodelvoltloop.ref + voltage_margin))) && (actualvalues.outputvolt < (closedloopmodelvoltloop.ref + upper_thres_voltage_margin)) && (hit_max_buck_theshold == 0)){
+            else if ((hit_ref_buck_volt_first_time == 1) && ((actualvalues.buck_out_voltage < (closedloopmodelvoltloop.ref - voltage_margin)) || (actualvalues.buck_out_voltage > (closedloopmodelvoltloop.ref + voltage_margin))) && (actualvalues.buck_out_voltage < (closedloopmodelvoltloop.ref + upper_thres_voltage_margin)) && (hit_max_buck_theshold == 0)){
                 closedloopmodelcurrloop.ref = PIControl(&closedloopmodelvoltloop, x5_faster);
             }
 
+            //closedloopmodelcurrloop.ref = 1.0f;
 //######################Code for the current control of the inner loop################################
-            closedloopmodelcurrloop.currerr = closedloopmodelcurrloop.ref - actualvalues.currsens;
+            closedloopmodelcurrloop.currerr = closedloopmodelcurrloop.ref - actualvalues.buck_out_curr;
 //
             duty = PIControl(&closedloopmodelcurrloop, normal);
 
@@ -602,6 +770,8 @@ interrupt void ADCA1_ISR(void)
             fault_led_turnon;                                       //Fault is detected and led is tuned on to reflect the same.                                     //Indicator of the fault detection
 
 //            Reinitialising the PI controller variables
+            closedloopmodelcurrloop.output = 0.0f;
+            closedloopmodelvoltloop.output = 0.0f;
             closedloopmodelcurrloop.integralsum = 0.0f;             /*      \                                                                                      */
             closedloopmodelvoltloop.integralsum = 0.0f;             /*       \                                                                                     */
             closedloopmodelvoltloop.preverr = 0.0f;                 /*        \    These lines are used for the reinitialising of the pi variables                  */
@@ -646,12 +816,12 @@ interrupt void ADCA1_ISR(void)
 //#########################End of the state machine##################################################
 
 //#####################For the uart message transmission##########################
-//    UartDataCounter++;
-//    if (UartDataCounter >= 200000){        //It means after every 5 seconds.
-//        UartDataSend = 1;       //It means that the data can be sent via the uart in the main
-//        UartDataCounter = 0;
-//        publishData(txData);
-//    }
+    UartDataCounter++;
+    if (UartDataCounter >= 200000){        //It means after every 5 seconds.
+        UartDataSend = 1;       //It means that the data can be sent via the uart in the main
+        UartDataCounter = 0;
+        publishData(txData);
+    }
 //##################End of the uart message transmission#######################
 
 //    Ending the state machine for the alternating battery charger

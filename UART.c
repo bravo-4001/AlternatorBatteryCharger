@@ -55,24 +55,53 @@ char* addInteger(float val, char* showData){
     return showData;
 }
 
-//void publishData(char* txData){
-//    *(txData++)='P';
-//    *(txData++)='a';
-//    *(txData++)='r';
-//    *(txData++)='a';
-//    *(txData++)='m';
-//    *(txData++)=':';
-//    txData = addInteger(actualvalues.highvolt, txData);
-//    txData = addInteger(actualvalues.currsens, txData);
-//    txData = addInteger(actualvalues.outputvolt, txData);
-//    txData = addInteger(actualvalues.heatsinkvoltsens, txData);
-//    txData = addInteger(actualvalues.inductorcoppvoltsens, txData);
-//    txData = addInteger(actualvalues.inductorcorevoltsens, txData);
+char* addInteger_uart(float val, char* showData){
+    if (val < 0.0){
+//        *(showData++) = '-';
+        val = val*(-1.0);
+    }
+    else{
+//        *(showData++) = '+';
+    }
+//    Integer part
+    Uint16 intPart = (Uint16)val;
+    val = val - intPart;
+    Uint16 fracPart = (Uint16)((val * 100.0) + 0.5f);   //Rounding off to the nearest fractional value
+
+    *(showData++) = (intPart/100)%10 + '0';
+    *(showData++) = (intPart/10)%10 + '0';
+    *(showData++) = (intPart)%10 + '0';
+    *(showData++) = '.';
+    *(showData++) = (fracPart/10)%10 + '0';
+    *(showData++) = (fracPart)%10 + '0';
+
+//    *(showData++) = '\0';
+    return showData;
+}
+
+void publishData(char* txData){
+    *(txData++)='P';
+    *(txData++)='a';
+    *(txData++)='r';
+    *(txData++)='a';
+    *(txData++)='m';
+    *(txData++)=':';
+    txData = addInteger_uart(actualvalues.buck_out_voltage, txData);
+    *(txData++) = ',';
+    txData = addInteger_uart(actualvalues.buck_out_curr, txData);
+    *(txData++) = ',';
+    txData = addInteger_uart(actualvalues.dc_link, txData);
+    *(txData++) = ',';
+    txData = addInteger_uart(avgvalues.avgheatsinktemp, txData);
+    *(txData++) = ',';
+    txData = addInteger_uart(avgvalues.avgindcopptemp, txData);
+    *(txData++) = ',';
+    txData = addInteger_uart(avgvalues.avgindcoretemp, txData);
 //    (txData--);
-//    *(txData++)='\r';
-//    *(txData++)='\n';
-//    *(txData)='\0';
-//}
+    *(txData++)='\r';
+    *(txData++)='\n';
+    *(txData)='\0';
+}
 
 void SCIA_init()
 {

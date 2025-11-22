@@ -66,6 +66,9 @@ extern void Lcd_CreateCustomChar(Uint16 location, unsigned char* pattern);
 extern void InitSwitchesXBar(void);
 extern unsigned char TimerShape[8];
 extern unsigned char emoji[8];
+extern float v_magnitude_array[667];
+extern float freq_array[667];
+extern Uint32 plot_counter;
 extern Uint16 row;
 extern Uint16 col;
 extern volatile Uint16 avg_vals_counter;
@@ -77,12 +80,17 @@ extern void ledCtrlFault(void);
 
 //+++++++++++++++++Start of the structue definitions+++++++++++++++++++++
 typedef struct{
-    float dcLink;
-    float currsens;
-    float outputvolt;
-    float heatsinkvoltsens;
-    float inductorcoppvoltsens;
-    float inductorcorevoltsens;
+    float dc_link;
+    float buck_out_curr;
+    float buck_out_voltage;
+    float heat_sink_temp;
+    float inductor_copp_temp;
+    float inductor_core_temp;
+    float r_line_volt;
+    float b_line_volt;
+    float r_phase_curr;
+    float b_phase_curr;
+    float alt_temp;
 }ALT_BATT_PARAMS;
 
 typedef struct{
@@ -139,6 +147,16 @@ typedef enum{
    x5_faster,
 }pid_control;
 
+typedef enum{
+    ryb_phase_seq,
+    rby_phase_seq,
+}phase_seq;
+
+typedef struct{
+    Uint16 ryb_phase_seq;
+    Uint16 rby_phase_seq;
+}PHASE_SEQ;
+
 typedef struct{
     Uint16 hvovervoltage : 1;
     Uint16 hvundervoltage : 1;
@@ -153,18 +171,25 @@ typedef struct{
     float avgheatsinktemp;
     float avgindcopptemp;
     float avgindcoretemp;
+    float avgalttemp;
+    float rms_r_phase_curr;
+    float rms_b_phase_curr;
+    float rms_r_phase_volt;
+    float rms_b_phase_volt;
 }AVG_VALS;
 
 typedef struct{
     float ntcheatsinkres;
     float ntcindcoppres;
     float ntcindcoreres;
+    float ntcalttemp;
 }NTC_RES;
 
 typedef struct{
     float inst_ntcheatsinktemp;
     float inst_ntcindcopptemp;
     float inst_ntcindcoretemp;
+    float inst_ntcalttemp;
 }CORE_TEMP_INST_VALS;
 
 typedef struct{
@@ -174,6 +199,11 @@ typedef struct{
     float sum_currsens;
     float sum_outvolt;
     float sum_dclink;
+    float sum_inst_ntcalttemp;
+    float sum_inst_r_phase_curr;
+    float sum_inst_b_phase_curr;
+    float sum_inst_r_phase_volt;
+    float sum_inst_b_phase_volt;
 }SUM_INST_VALS;
 
 typedef struct{
@@ -181,6 +211,8 @@ typedef struct{
     Uint32 onesecdelaycnt;
     Uint32 twosecdelaycnt;
     Uint32 fivesecdelaycnt;
+    Uint32 alt_var_time_delay;
+    Uint16 phase_seq_max_cnt;
 }DELAY_CTR;
 
 typedef struct{
@@ -207,18 +239,53 @@ typedef struct{
     Uint16 undervoltage;
     Uint16 overoutvoltage;
 }FAULT_TYPE;
+
+typedef struct{
+    float v_alpha;
+    float v_beta;
+    float v_d;
+    float v_q;
+    float theta_e;
+    float prev_omega;
+    float prev_theta_e;
+    float omega;
+    float freq;
+    float time_period;
+}PLL_LOOP_PARAMS;
+
+typedef struct{
+    float prev_val;
+    float new_val;
+}LOW_PASS_FILTER;
+
+typedef struct{
+    float x;
+    float x_prev;
+    float y;
+    float y_prev;
+}HARMONIC_OSCILLATOR;
+
 //+++++++++++++++++++End of the structure definitions++++++++++++++++++++++
 
 //+++++++++++++Start of my Global variables declarations++++++++++++++
 extern statemachine currstate;
 extern statemachine prevstate;
+extern phase_seq phase_detect;
 extern float expected;
+extern Uint16 seq_detect_counter;
+extern Uint16 phase_seq_change = 0;
 extern float duty;
 extern volatile Uint16 updateAfter20ms_Ctr;
 extern float avgCurrOffset;
 extern float beta;
 extern volatile Uint32 trans_counter;
+extern volatile Uint32 var_delay_alt_counter;
+extern float Vm;
+extern float input_freq;
+extern float phase;
+extern float v_magnitude;
 extern Uint16 whatToShow;
+extern PHASE_SEQ phase_seq_cntr;
 extern ALT_BATT_PARAMS sensedvalues;
 extern ALT_BATT_PARAMS actualvalues;
 extern ALT_BATT_PARAMS multipliers;
@@ -232,8 +299,13 @@ extern TRIPSIGNAS tripsignals;
 extern SUM_INST_VALS suminstvals;
 extern CLOSED_LOOP_VARS closedloopmodelcurrloop;
 extern CLOSED_LOOP_VARS closedloopmodelvoltloop;
+extern CLOSED_LOOP_VARS pll_w_controller;
 extern DELAY_CTR delayCtrs;
 extern FAULT_TYPE faultype;
+extern PLL_LOOP_PARAMS pll_loop_params;
+extern HARMONIC_OSCILLATOR harmonic_oscillator;
+extern LOW_PASS_FILTER lpf_r_line;
+extern LOW_PASS_FILTER lpf_b_line;
 //+++++++++++++++End of my Global variables declarations++++++++++++++++
 
 //++++++++++++Macros definitions start++++++++++++++++
@@ -295,6 +367,7 @@ extern void SCIA_init(void);
 extern void SCIAWrite(char* str);
 extern void updateduty(void);
 extern char* addInteger(float val, char* txData);
+extern char* addInteger_uart(float val, char* txData);
 extern char txData[DATA_LENGTH];
 extern char rxData[DATA_LENGTH];
 extern char showData[DATA_LENGTH];;
@@ -380,15 +453,16 @@ extern const struct PIE_VECT_TABLE PieVectTableInit;    // PieVectTableInit is a
 #define CalAdccINL (void   (*)(void))0x0703B0
 #define CalAdcdINL (void   (*)(void))0x0703AE
 
-//State variables
-#define ActiveTripCond ((actualvalues.currsens > refValsActState.currRefMax) || (actualvalues.outputvolt > refValsActState.buckOutMax) || (actualvalues.dcLink > refValsActState.altOutMax) || (actualvalues.dcLink < refValsActState.altOutMin))
-#define RestartFromTripCond ((actualvalues.currsens < refValsActState.currRefMax) && (actualvalues.outputvolt < refValsActState.buckOutMax) && (actualvalues.dcLink < refValsStartState.altOutMax) && (actualvalues.dcLink > refValsStartState.altOutMin))
-#define StartupCond ((actualvalues.dcLink < refValsStartState.altOutMax) && (actualvalues.dcLink > refValsStartState.altOutMin) && (actualvalues.outputvolt < refValsStartState.buckOutMax))
-#define output_volt_in_lim ((actualvalues.outputvolt >= (closedloopmodelvoltloop.ref - output_voltage_margin)) && (actualvalues.outputvolt <= (closedloopmodelvoltloop.ref + output_voltage_margin)))
-#define overcurrentfault (actualvalues.currsens > refValsActState.currRefMax)
-#define undervoltgefault (actualvalues.dcLink < refValsActState.altOutMin)
-#define overvoltagefault (actualvalues.dcLink > refValsActState.altOutMax)
-#define overoutvoltagefault (actualvalues.outputvolt > refValsActState.buckOutMax)
+//macros
+#define ActiveTripCond ((actualvalues.buck_out_curr > refValsActState.currRefMax) || (actualvalues.buck_out_voltage > refValsActState.buckOutMax) || (actualvalues.dc_link > refValsActState.altOutMax) || (actualvalues.dc_link < refValsActState.altOutMin))
+#define RestartFromTripCond ((actualvalues.buck_out_curr < refValsActState.currRefMax) && (actualvalues.buck_out_voltage < refValsActState.buckOutMax) && (actualvalues.dc_link < refValsStartState.altOutMax) && (actualvalues.dc_link > refValsStartState.altOutMin))
+#define StartupCond ((actualvalues.dc_link < refValsStartState.altOutMax) && (actualvalues.dc_link > refValsStartState.altOutMin) && (actualvalues.buck_out_voltage < refValsStartState.buckOutMax))
+#define output_volt_in_lim ((actualvalues.buck_out_voltage >= (closedloopmodelvoltloop.ref - output_voltage_margin)) && (actualvalues.buck_out_voltage <= (closedloopmodelvoltloop.ref + output_voltage_margin)))
+#define overcurrentfault (actualvalues.buck_out_curr > refValsActState.currRefMax)
+#define undervoltgefault (actualvalues.dc_link < refValsActState.altOutMin)
+#define overvoltagefault (actualvalues.dc_link > refValsActState.altOutMax)
+#define overoutvoltagefault (actualvalues.buck_out_voltage > refValsActState.buckOutMax)
+
 #define enablehardwaretrip (EPwm1Regs.TZEINT.bit.OST = 1)
 #define disablehardwaretrip (EPwm1Regs.TZEINT.bit.OST = 0)
 #define EPwmDown (EPwm1Regs.TZFLG.bit.OST == 1)
