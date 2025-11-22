@@ -273,7 +273,7 @@ extern statemachine prevstate;
 extern phase_seq phase_detect;
 extern float expected;
 extern Uint16 seq_detect_counter;
-extern Uint16 phase_seq_change = 0;
+extern Uint16 phase_seq_change;
 extern float duty;
 extern volatile Uint16 updateAfter20ms_Ctr;
 extern float avgCurrOffset;

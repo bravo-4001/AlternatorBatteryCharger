@@ -371,6 +371,7 @@ interrupt void ADCA1_ISR(void)
 {
     static float r_phase = 0.0f;
     static Uint16 phase_detected = 0;
+
 //    For the LCD logic
     updateAfter20ms_Ctr++;
     if (GpioDataRegs.GPADAT.bit.GPIO22 == 0){
@@ -421,25 +422,21 @@ interrupt void ADCA1_ISR(void)
         phase -= (2*M_PI);
     }
 
-    if (phase_seq_change == 0){
-        actualvalues.r_line_volt = (-1.0f) * sqrtf(3) * Vm * cosf(phase - M_PI/(3.0f));
-        actualvalues.b_line_volt = (-1.0f) * sqrtf(3) * Vm * cosf(phase - M_PI);
-    }else{
-        actualvalues.r_line_volt = sqrtf(3) * Vm * cosf(phase + M_PI/(3.0f));
-        actualvalues.b_line_volt = sqrtf(3) * Vm * cosf(phase - M_PI);
+    if (phase_seq_change == 0){   //For the RYB phase sequence
+        actualvalues.r_line_volt = sqrtf(3) * Vm * cosf(phase - M_PI/(3.0f));
+        actualvalues.b_line_volt = sqrtf(3) * Vm * cosf(phase);
+    }else{                        //For the RBY phase sequence
+        actualvalues.r_line_volt = (-1.0f) * sqrtf(3) * Vm * cosf(phase + M_PI/(3.0f));
+        actualvalues.b_line_volt = (-1.0f) * sqrtf(3) * Vm * cosf(phase);
     }
+//    End of the code for the test bench
 
-    //  For the phase sequence detection
+//    Code for the phase sequence detection algorithm
+
     float r_phase_prev = r_phase;
     float y_phase = (-1)*(actualvalues.b_line_volt + actualvalues.r_line_volt)/(3.0f);
     r_phase = ((2.0f)*actualvalues.r_line_volt - actualvalues.b_line_volt)/(3.0f);
     float b_phase = ((2.0f)*actualvalues.b_line_volt - actualvalues.r_line_volt)/(3.0f);
-
-    //Applying the low filter to filter high frequency components above 100 Hz
-//    lpf_r_line.prev_val = lpf_r_line.new_val;
-//    lpf_b_line.prev_val = lpf_b_line.new_val;
-//    lpf_r_line.new_val = (1.9811f/2.01885f)*lpf_r_line.prev_val + (0.01885/2.01885f)*actualvalues.r_line_volt + (0.01885/2.01885f)*actualvalues.r_line_volt;
-//    lpf_b_line.new_val = (1.9811f/2.01885f)*lpf_b_line.prev_val + (0.01885/2.01885f)*actualvalues.b_line_volt + (0.01885/2.01885f)*actualvalues.b_line_volt;
 
 //    Code for detecting the phase sequence of the given three phases
     if ((r_phase_prev <= 0.0f) && (r_phase >= 0.0f)){
@@ -458,12 +455,19 @@ interrupt void ADCA1_ISR(void)
         }
         seq_detect_counter++;
     }
+
 //    Getting the phase sequence
+
     if (seq_detect_counter >= delayCtrs.phase_seq_max_cnt){
         if (phase_seq_cntr.rby_phase_seq > phase_seq_cntr.ryb_phase_seq){
             phase_detect = rby_phase_seq;
-        }else{
+            phase_seq_cntr.rby_phase_seq = 0;
+            phase_seq_cntr.ryb_phase_seq = 0;
+        }
+        else{
             phase_detect = ryb_phase_seq;
+            phase_seq_cntr.ryb_phase_seq = 0;
+            phase_seq_cntr.rby_phase_seq = 0;
         }
         seq_detect_counter = 0;
         phase_detected = 1;
@@ -484,20 +488,11 @@ interrupt void ADCA1_ISR(void)
     // Code for finding the frequencies of the current supplied by the alternator using the phase locked loop
     if (phase_detected == 1){
         if (phase_detect == rby_phase_seq){
-                pll_loop_params.v_alpha = (-1.0f) * (1/sqrtf(3)) * actualvalues.b_line_volt;
+                pll_loop_params.v_alpha = (-1.0f) * (1/sqrtf(3)) * actualvalues.b_line_volt; //For the RBY phase sequence
         }else{
-            pll_loop_params.v_alpha = (1/sqrtf(3)) * actualvalues.b_line_volt;
+            pll_loop_params.v_alpha = (1/sqrtf(3)) * actualvalues.b_line_volt;  // For the RYB phase sequence
         }
         pll_loop_params.v_beta  = (2.0f*actualvalues.r_line_volt - actualvalues.b_line_volt)/3.0f;
-
-
-    //  If filtered output is desired to find the corresponding values
-    //    if (phase_detect == rby_phase_seq){
-    //        pll_loop_params.v_alpha = (-1.0f) * (1/sqrtf(3)) * lpf_b_line.new_val;
-    //    }else{
-    //        pll_loop_params.v_alpha = (1/sqrtf(3)) * lpf_b_line.new_val;
-    //    }
-    //    pll_loop_params.v_beta  = (2.0f*lpf_r_line.new_val - lpf_b_line.new_val)/3.0f;
 
         // Normalising the v_alpha and v_beta
         v_magnitude = sqrtf(pll_loop_params.v_alpha*pll_loop_params.v_alpha + pll_loop_params.v_beta*pll_loop_params.v_beta);
